@@ -35,8 +35,8 @@ from .utils.misc_utils import NerRawOutput, TripleRawOutput
 from .utils.embed_utils import retrieve_knn
 from .utils.typing import Triple
 from .utils.config_utils import BaseConfig
-
-logger = logging.getLogger(__name__)
+from .utils.logging_utils import get_logger
+logger = get_logger(__name__)
 
 
 class HippoRAG:
@@ -123,6 +123,7 @@ class HippoRAG:
         # LLM and embedding model specific working directories are created under every specified saving directories
         llm_label = self.global_config.llm_name.replace("/", "_")
         embedding_label = self.global_config.embedding_model_name.replace("/", "_")
+        #  working_dir: save_dir/llm_embedding/ 这个存entity/chunk/fact embeddings的文件夹
         self.working_dir = os.path.join(
             self.global_config.save_dir, f"{llm_label}_{embedding_label}"
         )
@@ -135,6 +136,7 @@ class HippoRAG:
 
         if self.global_config.openie_mode == "online":
             self.openie = OpenIE(llm_model=self.llm_model)
+            # 其他是本地部署的
         elif self.global_config.openie_mode == "offline":
             self.openie = VLLMOfflineOpenIE(self.global_config)
         elif self.global_config.openie_mode == "Transformers-offline":
@@ -165,6 +167,7 @@ class HippoRAG:
         )
         self.fact_embedding_store = EmbeddingStore(
             self.embedding_model,
+            #  db_filename
             os.path.join(self.working_dir, "fact_embeddings"),
             self.global_config.embedding_batch_size,
             "fact",
@@ -224,6 +227,7 @@ class HippoRAG:
         logger.info(f"Indexing Documents")
         logger.info(f"Performing OpenIE Offline")
 
+        #  找到没有进行 hash_id 编码的 chunks
         chunks = self.chunk_embedding_store.get_missing_string_hash_ids(docs)
 
         all_openie_info, chunk_keys_to_process = self.load_existing_openie(
@@ -263,21 +267,27 @@ class HippoRAG:
 
         logger.info(f"Performing OpenIE")
 
+        # 线下部署的
         if self.global_config.openie_mode == "offline":
             self.pre_openie(docs)
 
+        #  就是插入 hash-id text embedding 进行保存
         self.chunk_embedding_store.insert_strings(docs)
+        # hash_id 到 所在row 的映射 所有embedding好的
         chunk_to_rows = self.chunk_embedding_store.get_all_id_to_rows()
 
+        # 加载已有的 OpenIE 结果 与 待openie处理的
         all_openie_info, chunk_keys_to_process = self.load_existing_openie(
             chunk_to_rows.keys()
         )
         new_openie_rows = {k: chunk_to_rows[k] for k in chunk_keys_to_process}
 
         if len(chunk_keys_to_process) > 0:
+            # 使用 llm 进行 openie
             new_ner_results_dict, new_triple_results_dict = self.openie.batch_openie(
                 new_openie_rows
             )
+            # 会对 all_openie_info 进行更新
             self.merge_openie_results(
                 all_openie_info,
                 new_openie_rows,
@@ -285,9 +295,11 @@ class HippoRAG:
                 new_triple_results_dict,
             )
 
+        #  获取所有的 OpenIE 结果 进行保存
         if self.global_config.save_openie:
             self.save_openie_results(all_openie_info)
 
+        # 完成 NER OpenIE 获取所有结果
         ner_results_dict, triple_results_dict = reformat_openie_results(all_openie_info)
 
         assert (
@@ -297,11 +309,13 @@ class HippoRAG:
         # prepare data_store
         chunk_ids = list(chunk_to_rows.keys())
 
+        # 对triples的每一个字符串进行清洗
         chunk_triples = [
             [text_processing(t) for t in triple_results_dict[chunk_id].triples]
             for chunk_id in chunk_ids
         ]
         entity_nodes, chunk_triple_entities = extract_entity_nodes(chunk_triples)
+        # 所有 claim [a,b,c] = > (a, b, c), 所有chunk的放在一起
         facts = flatten_facts(chunk_triples)
 
         logger.info(f"Encoding Entities")
@@ -312,16 +326,21 @@ class HippoRAG:
 
         logger.info(f"Constructing Graph")
 
+        # 为addedge做准备
         self.node_to_node_stats = {}
+        # 记录逆文档率
         self.ent_node_to_chunk_ids = {}
 
+        # 实体节点间 的映射
         self.add_fact_edges(chunk_ids, chunk_triples)
+        # 实体节点到 chunk 的映射
         num_new_chunks = self.add_passage_edges(chunk_ids, chunk_triple_entities)
 
         if num_new_chunks > 0:
             logger.info(f"Found {num_new_chunks} new chunks to save into graph.")
             self.add_synonymy_edges()
 
+            # 把存储的点与边写进 iGraph
             self.augment_graph()
             self.save_igraph()
 
@@ -956,6 +975,7 @@ class HippoRAG:
                         content=triple[2], prefix=("entity-")
                     )
 
+                    # 权重 变2
                     self.node_to_node_stats[(node_key, node_2_key)] = (
                         self.node_to_node_stats.get((node_key, node_2_key), 0.0) + 1
                     )
@@ -966,6 +986,7 @@ class HippoRAG:
                     entities_in_chunk.add(node_key)
                     entities_in_chunk.add(node_2_key)
 
+                # 以entity node 为 key 记录 chunk_key， 一个node 可能对应多个 chunk
                 for node in entities_in_chunk:
                     self.ent_node_to_chunk_ids[node] = self.ent_node_to_chunk_ids.get(
                         node, set()
@@ -1279,7 +1300,9 @@ class HippoRAG:
             if node_id not in existing_nodes:
                 for k, v in node.items():
                     if k not in new_nodes:
+                        #  name {hash_id，content}
                         new_nodes[k] = []
+                    # k总共就三个 - name, hashid, content
                     new_nodes[k].append(v)
 
         if len(new_nodes) > 0:
@@ -1431,6 +1454,7 @@ class HippoRAG:
 
         # Create mapping from node name to vertex index
         try:
+            # 索引映射
             igraph_name_to_idx = {
                 node["name"]: idx for idx, node in enumerate(self.graph.vs)
             }  # from node key to the index in the backbone graph
@@ -1461,6 +1485,7 @@ class HippoRAG:
                 }
                 self.node_name_to_vertex_idx = igraph_name_to_idx
 
+            #  name 是hash_id
             self.entity_node_idxs = [
                 igraph_name_to_idx[node_key] for node_key in self.entity_node_keys
             ]  # a list of backbone graph node index
@@ -1569,6 +1594,7 @@ class HippoRAG:
         if len(all_query_strings) > 0:
             # get all query embeddings
             logger.info(f"Encoding {len(all_query_strings)} queries for query_to_fact.")
+            # Openai embedding model 没有这个拼接
             query_embeddings_for_triple = self.embedding_model.batch_encode(
                 all_query_strings,
                 instruction=get_query_instruction("query_to_fact"),
@@ -1817,6 +1843,7 @@ class HippoRAG:
             )  # at this stage, the length of linking_scope_map is determined by link_top_k
 
         # Get passage scores according to chosen dense retrieval model
+        # 稠密搜索
         dpr_sorted_doc_ids, dpr_sorted_doc_scores = self.dense_passage_retrieval(query)
         normalized_dpr_sorted_scores = min_max_normalize(dpr_sorted_doc_scores)
 
@@ -1846,6 +1873,7 @@ class HippoRAG:
         ), f"No phrases found in the graph for the given facts: {top_k_facts}"
 
         # Running PPR algorithm based on the passage and phrase weights previously assigned
+        # 使用PPR算法进行图搜索
         ppr_start = time.time()
         ppr_sorted_doc_ids, ppr_sorted_doc_scores = self.run_ppr(
             node_weights, damping=self.global_config.damping
@@ -1969,3 +1997,11 @@ class HippoRAG:
         sorted_doc_scores = doc_scores[sorted_doc_ids.tolist()]
 
         return sorted_doc_ids, sorted_doc_scores
+
+
+"""
+IDEA:
+
+APPNP 扩散传播（无训练、固定 α）
+
+"""

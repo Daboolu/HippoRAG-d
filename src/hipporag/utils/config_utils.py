@@ -180,6 +180,7 @@ class BaseConfig:
     )
 
     # Retrieval specific attributes
+    # sparse retrieval specific attributes 得到多少fact
     linking_top_k: int = field(
         default=5,
         metadata={"help": "The number of linked nodes at each retrieval step"},

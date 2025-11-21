@@ -5,7 +5,9 @@ import argparse
 import logging
 
 from src.hipporag import HippoRAG
-
+# .env 文件中配置 OPENAI_API_KEY
+from dotenv import load_dotenv
+load_dotenv()
 
 def main():
 
@@ -24,13 +26,17 @@ def main():
 
     save_dir = "outputs/openai"  # Define save directory for HippoRAG objects (each LLM/Embedding model combination will create a new subdirectory)
     llm_model_name = "gpt-4o-mini"  # Any OpenAI model name
-    embedding_model_name = "text-embedding-3-small"  # Embedding model name (NV-Embed, GritLM or Contriever for now)
+    embedding_model_name = "BAAI/bge-large-en-v1.5"  # Embedding model name (NV-Embed, GritLM or Contriever for now)
+    base_url="https://aihubmix.com/v1"
+    embedding_base_url="https://aihubmix.com/v1"
 
     # Startup a HippoRAG instance
     hipporag = HippoRAG(
         save_dir=save_dir,
         llm_model_name=llm_model_name,
         embedding_model_name=embedding_model_name,
+        llm_base_url=base_url,
+        embedding_base_url=embedding_base_url,
     )
 
     # Run indexing
@@ -59,8 +65,10 @@ def main():
         ],
     ]
 
-    print(hipporag.rag_qa(queries=queries, gold_docs=gold_docs, gold_answers=answers))
+    for re in hipporag.rag_qa(queries=queries, gold_docs=gold_docs, gold_answers=answers):
+        print(re)
 
 
 if __name__ == "__main__":
     main()
+

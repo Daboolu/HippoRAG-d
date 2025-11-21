@@ -38,6 +38,7 @@ class EmbeddingStore:
             os.makedirs(db_filename, exist_ok=True)
 
         self.filename = os.path.join(db_filename, f"vdb_{self.namespace}.parquet")
+        # 初始化 时就加载已经有的数据
         self._load_data()
 
     def get_missing_string_hash_ids(self, texts: List[str]):
@@ -56,6 +57,7 @@ class EmbeddingStore:
         existing = self.hash_id_to_row.keys()
 
         # Filter out the missing hash_ids.
+        # 找到没有进行 hash_id 编码的 chunks
         missing_ids = [hash_id for hash_id in all_hash_ids if hash_id not in existing]
         texts_to_encode = [nodes_dict[hash_id]["content"] for hash_id in missing_ids]
 

@@ -61,6 +61,7 @@ def cache_response(func):
             conn = sqlite3.connect(self.cache_file_name)
             c = conn.cursor()
             # if the table does not exist, create it
+            # 将LLM的output进行缓存
             c.execute(
                 """
                 CREATE TABLE IF NOT EXISTS cache (
@@ -129,6 +130,8 @@ class CacheOpenAI(BaseLLM):
     def from_experiment_config(cls, global_config: BaseConfig) -> "CacheOpenAI":
         config_dict = global_config.__dict__
         config_dict["max_retries"] = global_config.max_retry_attempts
+        # save_dir 下的 llm_cache 目录 是 cache_dir
+        # save_dir 下的 llm_nane _ embedding_name 目录 是 working_dir
         cache_dir = os.path.join(global_config.save_dir, "llm_cache")
         return cls(cache_dir=cache_dir, global_config=global_config)
 

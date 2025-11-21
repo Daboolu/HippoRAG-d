@@ -111,6 +111,7 @@ def extract_entity_nodes(
     graph_nodes = list(
         np.unique([ent for ents in chunk_triple_entities for ent in ents])
     )
+    # 得到一个去重的实体列表 与 每个 chunk 中triple  对应的实体列表
     return graph_nodes, chunk_triple_entities
 
 
@@ -118,6 +119,7 @@ def flatten_facts(chunk_triples: List[Triple]) -> List[Triple]:
     graph_triples = []  # a list of unique relation triple (in tuple) from all chunks
     for triples in chunk_triples:
         graph_triples.extend([tuple(t) for t in triples])
+    # 只有tuple才可以set去重，list不行
     graph_triples = list(set(graph_triples))
     return graph_triples
 

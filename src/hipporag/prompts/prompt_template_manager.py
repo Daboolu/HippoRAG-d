@@ -102,6 +102,7 @@ class PromptTemplateManager:
                             item["role"] = self.role_mapping.get(
                                 item["role"], item["role"]
                             )
+                            #  转换为 Template 实例
                             item["content"] = (
                                 item["content"]
                                 if isinstance(item["content"], Template)
