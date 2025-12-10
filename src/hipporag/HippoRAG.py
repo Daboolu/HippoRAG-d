@@ -283,7 +283,7 @@ class HippoRAG:
         new_openie_rows = {k: chunk_to_rows[k] for k in chunk_keys_to_process}
 
         if len(chunk_keys_to_process) > 0:
-            # 使用 llm 进行 openie
+            # 使用 llm 进行 openie 返回的是 chunk-id str 到 rawoutput的映射
             new_ner_results_dict, new_triple_results_dict = self.openie.batch_openie(
                 new_openie_rows
             )
@@ -314,6 +314,7 @@ class HippoRAG:
             [text_processing(t) for t in triple_results_dict[chunk_id].triples]
             for chunk_id in chunk_ids
         ]
+        # chunk_triple_entities 文章到entity的映射
         entity_nodes, chunk_triple_entities = extract_entity_nodes(chunk_triples)
         # 所有 claim [a,b,c] = > (a, b, c), 所有chunk的放在一起
         facts = flatten_facts(chunk_triples)
@@ -326,7 +327,7 @@ class HippoRAG:
 
         logger.info(f"Constructing Graph")
 
-        # 为addedge做准备
+        # 为addedge做准备 !
         self.node_to_node_stats = {}
         # 记录逆文档率
         self.ent_node_to_chunk_ids = {}
@@ -1816,6 +1817,7 @@ class HippoRAG:
                     weighted_fact_score = fact_score
 
                     if len(self.ent_node_to_chunk_ids.get(phrase_key, set())) > 0:
+                        # 节点特异性 越稀有越最重要
                         weighted_fact_score /= len(
                             self.ent_node_to_chunk_ids[phrase_key]
                         )
@@ -1825,6 +1827,7 @@ class HippoRAG:
 
                 phrases_and_ids.add((phrase, phrase_id))
 
+        # 对S P O 中 实体多次作为主语与宾语的部分进行归一化处理
         phrase_weights /= number_of_occurs
 
         for phrase, phrase_id in phrases_and_ids:
